@@ -1,6 +1,6 @@
 import { io } from "socket.io-client";
 
-const socket = io("http://localhost:3001");
+const socket = io("https://streamer-quiz-backend.onrender.com");
 socket.emit("changeScore", { playerId: socket.id, delta });
 useEffect(() => {
   socket.on("updateGame", (data) => {
