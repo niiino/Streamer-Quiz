@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { io } from "socket.io-client";
-import Peer from "simple-peer";
+import Peer from "peerjs";
 
 const socket = io("https://streamer-quiz-backend.onrender.com", {
   transports: ["websocket", "polling"],
@@ -92,10 +92,12 @@ export default function App() {
   const correctSound = useRef(null);
   const wrongSound = useRef(null);
 
-  // WebRTC States
-  const peersRef = useRef({}); // { slotIndex: { [socketId]: Peer } }
+  // WebRTC States (PeerJS)
+  const peerRef = useRef(null); // PeerJS instance
+  const connectionsRef = useRef({}); // { peerId: { slotIndex, call } }
   const localStreamsRef = useRef({}); // { slotIndex: MediaStream }
   const [broadcastingSlots, setBroadcastingSlots] = useState([]); // Welche Slots broadcaste ich?
+  const [myPeerId, setMyPeerId] = useState(null);
 
   // =========================
   // EFFECTS
@@ -145,32 +147,7 @@ export default function App() {
       }
     });
 
-    // WebRTC Signaling Events
-    socket.on("webrtc-offer", ({ fromSocketId, offer, slotIndex }) => {
-      console.log(`📥 Received WebRTC offer from ${fromSocketId} for slot ${slotIndex}`);
-      handleWebRTCOffer(fromSocketId, offer, slotIndex);
-    });
-
-    socket.on("webrtc-answer", ({ fromSocketId, answer, slotIndex }) => {
-      console.log(`📥 Received WebRTC answer from ${fromSocketId} for slot ${slotIndex}`);
-      handleWebRTCAnswer(fromSocketId, answer, slotIndex);
-    });
-
-    socket.on("webrtc-ice-candidate", ({ fromSocketId, candidate, slotIndex }) => {
-      console.log(`📥 Received ICE candidate from ${fromSocketId}`);
-      handleICECandidate(fromSocketId, candidate, slotIndex);
-    });
-
-    socket.on("peer-disconnected", ({ socketId }) => {
-      console.log(`❌ Peer disconnected: ${socketId}`);
-      cleanupPeer(socketId);
-    });
-
-    socket.on("peerStartedBroadcast", ({ peerId, slotIndex }) => {
-      console.log(`📺 Peer ${peerId} started broadcasting slot ${slotIndex}`);
-      // We don't create a connection here, we wait for their offer
-      // This is just a notification that someone is ready to stream
-    });
+    // PeerJS handles WebRTC signaling automatically, no manual events needed!
 
     // Wake up server on page load (für Render Cold Start)
     const wakeUpServer = async () => {
@@ -190,11 +167,6 @@ export default function App() {
       socket.off("disconnect");
       socket.off("connect_error");
       socket.off("matchUpdate");
-      socket.off("webrtc-offer");
-      socket.off("webrtc-answer");
-      socket.off("webrtc-ice-candidate");
-      socket.off("peer-disconnected");
-      socket.off("peerStartedBroadcast");
     };
   }, [isHost]);
 
@@ -242,148 +214,114 @@ export default function App() {
   }, []);
 
   // =========================
-  // WEBRTC FUNCTIONS
+  // WEBRTC FUNCTIONS (PeerJS)
   // =========================
-  const createPeerConnection = (targetSocketId, slotIndex, initiator, stream) => {
-    console.log(`🔗 Creating peer connection to ${targetSocketId} for slot ${slotIndex}, initiator: ${initiator}`);
 
-    const peer = new Peer({
-      initiator,
-      stream,
-      trickle: true,
-      config: {
-        iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun1.l.google.com:19302" },
-        ],
-      },
+  // Initialize PeerJS when component mounts
+  useEffect(() => {
+    if (!joined || !socket.id) return;
+
+    console.log("🔗 Initializing PeerJS...");
+    const peer = new Peer(socket.id, {
+      debug: 2, // Enable logging
     });
 
-    peer.on("signal", (signal) => {
-      console.log(`📤 Sending signal to ${targetSocketId}`);
-      if (signal.type === "offer") {
-        socket.emit("webrtc-offer", {
-          matchId,
-          targetSocketId,
-          offer: signal,
-          slotIndex,
-        });
-      } else if (signal.type === "answer") {
-        socket.emit("webrtc-answer", {
-          matchId,
-          targetSocketId,
-          answer: signal,
-          slotIndex,
-        });
-      } else {
-        socket.emit("webrtc-ice-candidate", {
-          matchId,
-          targetSocketId,
-          candidate: signal,
-          slotIndex,
-        });
-      }
-    });
-
-    peer.on("stream", (remoteStream) => {
-      console.log(`📺 Received stream from ${targetSocketId} for slot ${slotIndex}`);
-      console.log(`📺 Stream tracks:`, remoteStream.getTracks());
-      console.log(`📺 Video ref exists:`, !!videoRefs[slotIndex]?.current);
-
-      if (videoRefs[slotIndex]?.current) {
-        videoRefs[slotIndex].current.srcObject = remoteStream;
-        videoRefs[slotIndex].current.play().catch(err => {
-          console.warn("❌ Play failed:", err);
-        });
-        console.log(`✅ Stream attached to video element for slot ${slotIndex}`);
-      } else {
-        console.error(`❌ No video ref for slot ${slotIndex}`);
-      }
+    peer.on("open", (id) => {
+      console.log(`✅ PeerJS connected with ID: ${id}`);
+      setMyPeerId(id);
+      peerRef.current = peer;
     });
 
     peer.on("error", (err) => {
-      console.error(`❌ Peer error with ${targetSocketId}:`, err);
+      console.error("❌ PeerJS error:", err);
     });
 
-    peer.on("close", () => {
-      console.log(`🔌 Peer connection closed with ${targetSocketId}`);
-    });
+    // Handle incoming calls
+    peer.on("call", (call) => {
+      console.log(`📞 Incoming call from ${call.peer} for slot ${call.metadata?.slotIndex}`);
 
-    // Store peer reference
-    if (!peersRef.current[slotIndex]) {
-      peersRef.current[slotIndex] = {};
-    }
-    peersRef.current[slotIndex][targetSocketId] = peer;
+      // Answer the call (we don't send our stream back, just receive)
+      call.answer();
 
-    return peer;
-  };
+      call.on("stream", (remoteStream) => {
+        const slotIndex = call.metadata?.slotIndex;
+        console.log(`📺 Received stream for slot ${slotIndex}`);
 
-  const handleWebRTCOffer = (fromSocketId, offer, slotIndex) => {
-    console.log(`🎯 Handling offer from ${fromSocketId} for slot ${slotIndex}`);
-    // Someone wants to send us their video for this slot
-    // We create a peer as receiver (initiator: false)
-    try {
-      const peer = createPeerConnection(fromSocketId, slotIndex, false, null);
-      peer.signal(offer);
-    } catch (error) {
-      console.error(`❌ Error handling offer:`, error);
-    }
-  };
+        if (videoRefs[slotIndex]?.current) {
+          videoRefs[slotIndex].current.srcObject = remoteStream;
+          videoRefs[slotIndex].current.play().catch(err => {
+            console.warn("❌ Play failed:", err);
+          });
+          console.log(`✅ Stream attached to slot ${slotIndex}`);
+        }
+      });
 
-  const handleWebRTCAnswer = (fromSocketId, answer, slotIndex) => {
-    const peer = peersRef.current[slotIndex]?.[fromSocketId];
-    if (peer) {
-      peer.signal(answer);
-    } else {
-      console.warn(`No peer found for ${fromSocketId} slot ${slotIndex}`);
-    }
-  };
+      call.on("close", () => {
+        console.log(`📴 Call closed from ${call.peer}`);
+      });
 
-  const handleICECandidate = (fromSocketId, candidate, slotIndex) => {
-    const peer = peersRef.current[slotIndex]?.[fromSocketId];
-    if (peer) {
-      peer.signal(candidate);
-    }
-  };
-
-  const cleanupPeer = (socketId) => {
-    // Remove all peers associated with this socket
-    Object.keys(peersRef.current).forEach((slotIndex) => {
-      const peer = peersRef.current[slotIndex]?.[socketId];
-      if (peer) {
-        peer.destroy();
-        delete peersRef.current[slotIndex][socketId];
+      // Store the call
+      if (!connectionsRef.current[call.peer]) {
+        connectionsRef.current[call.peer] = {};
       }
+      connectionsRef.current[call.peer][call.metadata?.slotIndex] = call;
     });
-  };
+
+    return () => {
+      if (peer && !peer.destroyed) {
+        peer.destroy();
+      }
+    };
+  }, [joined, socket.id]);
 
   const broadcastCameraToSlot = async (slotIndex, stream) => {
     console.log(`📡 Broadcasting camera to slot ${slotIndex}`);
-    console.log(`📊 Current players:`, players);
-    console.log(`📊 My socket ID:`, socket.id);
+
+    if (!peerRef.current) {
+      console.error("❌ PeerJS not initialized");
+      return;
+    }
 
     // Save the stream locally
     localStreamsRef.current[slotIndex] = stream;
     setBroadcastingSlots((prev) => [...prev, slotIndex]);
 
-    // Get all sockets in the match from the server
+    // Get all peers in the match
     socket.emit("requestPeers", { matchId }, (response) => {
       console.log(`📥 Received peers:`, response);
 
       if (response && response.peers) {
         response.peers.forEach((peerId) => {
-          if (peerId !== socket.id) {
-            console.log(`🔗 Creating peer connection to ${peerId}`);
-            createPeerConnection(peerId, slotIndex, true, stream);
+          if (peerId !== socket.id && peerId !== myPeerId) {
+            console.log(`📞 Calling peer ${peerId} for slot ${slotIndex}`);
+
+            try {
+              const call = peerRef.current.call(peerId, stream, {
+                metadata: { slotIndex },
+              });
+
+              call.on("error", (err) => {
+                console.error(`❌ Call error to ${peerId}:`, err);
+              });
+
+              // Store the call
+              if (!connectionsRef.current[peerId]) {
+                connectionsRef.current[peerId] = {};
+              }
+              connectionsRef.current[peerId][slotIndex] = call;
+            } catch (error) {
+              console.error(`❌ Failed to call ${peerId}:`, error);
+            }
           }
         });
       }
     });
 
-    // Notify others that we're broadcasting this slot
+    // Notify others that we're broadcasting
     socket.emit("startBroadcast", {
       matchId,
       slotIndex,
+      peerId: myPeerId || socket.id,
     });
   };
 
@@ -396,11 +334,14 @@ export default function App() {
       delete localStreamsRef.current[slotIndex];
     }
 
-    // Destroy all peer connections for this slot
-    if (peersRef.current[slotIndex]) {
-      Object.values(peersRef.current[slotIndex]).forEach((peer) => peer.destroy());
-      delete peersRef.current[slotIndex];
-    }
+    // Close all calls for this slot
+    Object.keys(connectionsRef.current).forEach((peerId) => {
+      const call = connectionsRef.current[peerId]?.[slotIndex];
+      if (call) {
+        call.close();
+        delete connectionsRef.current[peerId][slotIndex];
+      }
+    });
 
     setBroadcastingSlots((prev) => prev.filter((s) => s !== slotIndex));
 
