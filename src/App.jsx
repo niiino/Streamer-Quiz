@@ -127,12 +127,14 @@ export default function App() {
         if (data.config.playersPerTeam) setPlayersPerTeam(data.config.playersPerTeam);
       }
 
-      // Sync game state
+      // Sync game state (für ALLE Spieler, nicht nur Gäste!)
       if (data.state) {
-        if (data.state.revealed) setRevealed(data.state.revealed);
-        if (data.state.showAnswer) setShowAnswer(data.state.showAnswer);
-        if (data.state.playerScores) setPlayerScores(data.state.playerScores);
-        if (data.state.teamScores) setTeamScores(data.state.teamScores);
+        console.log("🔄 Syncing game state:", data.state);
+        if (data.state.revealed !== undefined) setRevealed(data.state.revealed);
+        if (data.state.showAnswer !== undefined) setShowAnswer(data.state.showAnswer);
+        if (data.state.playerScores !== undefined) setPlayerScores(data.state.playerScores);
+        if (data.state.teamScores !== undefined) setTeamScores(data.state.teamScores);
+        if (data.state.playerNames !== undefined) setPlayerNames(data.state.playerNames);
       }
     });
 
@@ -244,13 +246,46 @@ export default function App() {
       return;
     }
 
-    console.log("👥 Joining match:", matchId);
-    socket.emit("joinMatch", matchId.toUpperCase(), playerName || "Unbekannt");
+    const cleanMatchId = matchId.toUpperCase().trim();
+    console.log("👥 Joining match:", cleanMatchId);
 
-    // Gäste überspringen das Setup
-    setJoined(true);
-    setSetupDone(true); // Gäste gehen direkt ins Spiel
-    setIsHost(false);
+    socket.emit("joinMatch", cleanMatchId, playerName || "Unbekannt", (response) => {
+      if (response && response.success) {
+        console.log("✅ Successfully joined match:", response.match);
+
+        // Lade den aktuellen Match State
+        const match = response.match;
+        if (match.config) {
+          if (match.config.theme) setTheme(match.config.theme);
+          if (match.config.teamMode !== undefined) setTeamMode(match.config.teamMode);
+          if (match.config.playerCount) setPlayerCount(match.config.playerCount);
+          if (match.config.teamCount) setTeamCount(match.config.teamCount);
+          if (match.config.playersPerTeam) setPlayersPerTeam(match.config.playersPerTeam);
+        }
+
+        if (match.state) {
+          if (match.state.revealed) setRevealed(match.state.revealed);
+          if (match.state.showAnswer) setShowAnswer(match.state.showAnswer);
+          if (match.state.playerScores) setPlayerScores(match.state.playerScores);
+          if (match.state.teamScores) setTeamScores(match.state.teamScores);
+          if (match.state.playerNames) setPlayerNames(match.state.playerNames);
+        }
+
+        if (match.players) {
+          setPlayers(match.players);
+        }
+
+        // Gäste überspringen das Setup
+        setJoined(true);
+        setSetupDone(true); // Gäste gehen direkt ins Spiel
+        setIsHost(false);
+        setMatchId(cleanMatchId);
+        setErrorMessage("");
+      } else {
+        console.error("❌ Failed to join match:", response);
+        setErrorMessage(response?.error || "Match nicht gefunden. Bitte überprüfe die Match-ID.");
+      }
+    });
   };
 
   const startCamera = async (slotIndex) => {
@@ -295,40 +330,60 @@ export default function App() {
   const renamePlayer = (slotIndex) => {
     const newName = prompt("Neuer Name:", playerNames[slotIndex]);
     if (!newName || !newName.trim()) return;
-    setPlayerNames((prev) => {
-      const copy = [...prev];
-      copy[slotIndex] = newName.trim();
-      return copy;
-    });
+
+    const newPlayerNames = [...playerNames];
+    newPlayerNames[slotIndex] = newName.trim();
+    setPlayerNames(newPlayerNames);
+
+    // Sync to all players
+    if (matchId) {
+      socket.emit("updateGameState", {
+        matchId,
+        state: { playerNames: newPlayerNames },
+      });
+    }
   };
 
   const changePlayerScore = (slotIndex, delta) => {
-    setPlayerScores((prev) => {
-      const copy = [...prev];
-      copy[slotIndex] += delta;
-      socket.emit("changeScore", {
-        playerId: slotIndex,
-        delta,
-        newScore: copy[slotIndex],
+    const newPlayerScores = [...playerScores];
+    newPlayerScores[slotIndex] += delta;
+    setPlayerScores(newPlayerScores);
+
+    // Sync to all players
+    if (matchId) {
+      socket.emit("updateGameState", {
+        matchId,
+        state: { playerScores: newPlayerScores },
       });
-      return copy;
-    });
+    }
   };
 
   const changeTeamScore = (teamIndex, delta) => {
-    setTeamScores((prev) => {
-      const copy = [...prev];
-      copy[teamIndex] += delta;
-      return copy;
-    });
+    const newTeamScores = [...teamScores];
+    newTeamScores[teamIndex] += delta;
+    setTeamScores(newTeamScores);
+
+    // Sync to all players
+    if (matchId) {
+      socket.emit("updateGameState", {
+        matchId,
+        state: { teamScores: newTeamScores },
+      });
+    }
   };
 
   const changeTwoTeamScore = (teamSideIndex, delta) => {
-    setPlayerScores((prev) => {
-      const copy = [...prev];
-      copy[teamSideIndex] += delta;
-      return copy;
-    });
+    const newPlayerScores = [...playerScores];
+    newPlayerScores[teamSideIndex] += delta;
+    setPlayerScores(newPlayerScores);
+
+    // Sync to all players
+    if (matchId) {
+      socket.emit("updateGameState", {
+        matchId,
+        state: { playerScores: newPlayerScores },
+      });
+    }
   };
 
   const handleReveal = (cat, rowIdx) => {
@@ -367,10 +422,25 @@ export default function App() {
   };
 
   const resetGame = () => {
-    setRevealed({});
-    setShowAnswer({});
-    setPlayerScores(Array(8).fill(0));
-    setTeamScores(Array(4).fill(0));
+    const newState = {
+      revealed: {},
+      showAnswer: {},
+      playerScores: Array(8).fill(0),
+      teamScores: Array(4).fill(0),
+    };
+
+    setRevealed(newState.revealed);
+    setShowAnswer(newState.showAnswer);
+    setPlayerScores(newState.playerScores);
+    setTeamScores(newState.teamScores);
+
+    // Sync to all players
+    if (matchId) {
+      socket.emit("updateGameState", {
+        matchId,
+        state: newState,
+      });
+    }
   };
 
   const playSound = (type) => {
