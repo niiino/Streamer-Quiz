@@ -2,17 +2,47 @@ import React, { useState, useRef, useEffect } from "react";
 import { io } from "socket.io-client";
 const socket = io("https://streamer-quiz-backend.onrender.com");
 export default function App() {
-  // =========================
-  // QUIZ DATEN
-  // =========================
+  const [matchId, setMatchId] = useState("");
+  const [joined, setJoined] = useState(false);
+  const [playerName, setPlayerName] = useState("");
+  const [players, setPlayers] = useState([]);
   useEffect(() => {
-    socket.on("updateGame", (data) => {
-      setPlayerNames(data.players.map(p => p.name));
-      setPlayerScores(data.players.map(p => p.score));
-      setRevealed(data.revealed);
-      setShowAnswer(data.showAnswer);
+    socket.on("matchUpdate", (data) => {
+      setPlayers(data.players);
     });
   }, []);
+  const handleJoin = () => {
+    socket.emit("joinMatch", matchId, playerName || "Unbekannt");
+    setJoined(true);
+  };
+  // ganz oben, nach const handleJoin = ...
+if (!joined) {
+  return (
+    <div className="w-screen h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800 text-white">
+      <div className="bg-black/60 border border-white/20 rounded-2xl p-8 shadow-2xl w-full max-w-md">
+        <h1 className="text-2xl font-bold text-center mb-6">🔗 Match beitreten</h1>
+        <input
+          value={matchId}
+          onChange={(e) => setMatchId(e.target.value)}
+          placeholder="Match ID oder Link"
+          className="bg-slate-800 w-full px-3 py-2 rounded-lg mb-3 text-center"
+        />
+        <input
+          value={playerName}
+          onChange={(e) => setPlayerName(e.target.value)}
+          placeholder="Dein Name"
+          className="bg-slate-800 w-full px-3 py-2 rounded-lg mb-3 text-center"
+        />
+        <button
+          onClick={handleJoin}
+          className="bg-blue-600 hover:bg-blue-500 text-white font-semibold w-full py-2 rounded-lg"
+        >
+          Match beitreten
+        </button>
+      </div>
+    </div>
+  );
+}
   const categories = ["HISTORY", "SCIENCE", "MOVIES", "GAMING", "RANDOM"];
   const pointsOrder = [100, 200, 300, 400, 500]; // 100 oben, 500 unten
 

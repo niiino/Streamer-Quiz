@@ -1,67 +1,54 @@
 import express from "express";
-import http from "http";
+import { createServer } from "http";
 import { Server } from "socket.io";
 import cors from "cors";
+import { randomUUID } from "crypto";
 
 const app = express();
 app.use(cors());
-
-const server = http.createServer(app);
+const server = createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: "*",
-  },
+  cors: { origin: "*" },
 });
 
-// --- Spieler- & Game-Logik ---
-let players = [];
-let revealed = {};
-let showAnswer = {};
-let scores = {};
+// -> Datenhaltung
+const matches = {}; // { matchId: { players: [], state: {...} } }
 
-// Verbindung
 io.on("connection", (socket) => {
-  console.log(`🔗 Spieler verbunden: ${socket.id}`);
-  players.push({ id: socket.id, name: `PLAYER ${players.length + 1}`, score: 0 });
+  console.log("🔌 New connection:", socket.id);
 
-  // Sende aktuelle Daten an neuen Spieler
-  socket.emit("init", { players, revealed, showAnswer, scores });
+  // Spieler tritt Match bei
+  socket.on("joinMatch", (matchId, playerName) => {
+    if (!matches[matchId]) {
+      matches[matchId] = { players: [], state: {} };
+    }
 
-  // An alle broadcasten, dass jemand neu ist
-  io.emit("playersUpdate", players);
+    matches[matchId].players.push({ id: socket.id, name: playerName });
+    socket.join(matchId);
 
-  // Name ändern
-  socket.on("changeName", (newName) => {
-    const p = players.find((p) => p.id === socket.id);
-    if (p) p.name = newName;
-    io.emit("playersUpdate", players);
-  });
-
-  // Karte aufdecken
-  socket.on("reveal", (key) => {
-    revealed[key] = true;
-    io.emit("revealedUpdate", revealed);
-  });
-
-  // Antwort zeigen
-  socket.on("showAnswer", (key) => {
-    showAnswer[key] = true;
-    io.emit("showAnswerUpdate", showAnswer);
+    io.to(matchId).emit("matchUpdate", matches[matchId]);
+    console.log(`👥 ${playerName} joined match ${matchId}`);
   });
 
   // Punkte ändern
-  socket.on("changeScore", ({ id, delta }) => {
-    scores[id] = (scores[id] || 0) + delta;
-    io.emit("scoreUpdate", scores);
+  socket.on("changeScore", ({ matchId, playerId, delta }) => {
+    const match = matches[matchId];
+    if (!match) return;
+    const player = match.players.find((p) => p.id === playerId);
+    if (player) player.score = (player.score || 0) + delta;
+    io.to(matchId).emit("matchUpdate", match);
   });
 
-  // Spieler trennt sich
+  // Spieler verlässt Match
   socket.on("disconnect", () => {
-    players = players.filter((p) => p.id !== socket.id);
-    io.emit("playersUpdate", players);
-    console.log(`❌ Spieler getrennt: ${socket.id}`);
+    for (const [id, match] of Object.entries(matches)) {
+      match.players = match.players.filter((p) => p.id !== socket.id);
+      io.to(id).emit("matchUpdate", match);
+    }
+    console.log("❌ Player disconnected:", socket.id);
   });
 });
 
-const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => console.log(`🚀 Socket.IO Server läuft auf Port ${PORT}`));
+server.listen(3001, () => {
+  console.log("✅ Server läuft auf Port 3001");
+});
