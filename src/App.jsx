@@ -2,49 +2,20 @@ import React, { useState, useRef, useEffect } from "react";
 import { io } from "socket.io-client";
 const socket = io("https://streamer-quiz-backend.onrender.com");
 export default function App() {
+  // =========================
+  // MULTIPLAYER STATE (muss ganz oben sein!)
+  // =========================
   const [matchId, setMatchId] = useState("");
   const [joined, setJoined] = useState(false);
   const [playerName, setPlayerName] = useState("");
   const [players, setPlayers] = useState([]);
-  useEffect(() => {
-    socket.on("matchUpdate", (data) => {
-      setPlayers(data.players);
-    });
-  }, []);
-  const handleJoin = () => {
-    socket.emit("joinMatch", matchId, playerName || "Unbekannt");
-    setJoined(true);
-  };
-  // ganz oben, nach const handleJoin = ...
-if (!joined) {
-  return (
-    <div className="w-screen h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800 text-white">
-      <div className="bg-black/60 border border-white/20 rounded-2xl p-8 shadow-2xl w-full max-w-md">
-        <h1 className="text-2xl font-bold text-center mb-6">🔗 Match beitreten</h1>
-        <input
-          value={matchId}
-          onChange={(e) => setMatchId(e.target.value)}
-          placeholder="Match ID oder Link"
-          className="bg-slate-800 w-full px-3 py-2 rounded-lg mb-3 text-center"
-        />
-        <input
-          value={playerName}
-          onChange={(e) => setPlayerName(e.target.value)}
-          placeholder="Dein Name"
-          className="bg-slate-800 w-full px-3 py-2 rounded-lg mb-3 text-center"
-        />
-        <button
-          onClick={handleJoin}
-          className="bg-blue-600 hover:bg-blue-500 text-white font-semibold w-full py-2 rounded-lg"
-        >
-          Match beitreten
-        </button>
-      </div>
-    </div>
-  );
-}
+  const [isHost, setIsHost] = useState(false);
+
+  // =========================
+  // GAME STATE (alle Hooks MÜSSEN vor dem return sein!)
+  // =========================
   const categories = ["HISTORY", "SCIENCE", "MOVIES", "GAMING", "RANDOM"];
-  const pointsOrder = [100, 200, 300, 400, 500]; // 100 oben, 500 unten
+  const pointsOrder = [100, 200, 300, 400, 500];
 
   const qa = {
     HISTORY: [
@@ -84,77 +55,47 @@ if (!joined) {
     ],
   };
 
-  // =========================
-  // STATE
-  // =========================
-
-  // Setup / Ansicht
   const [setupDone, setSetupDone] = useState(false);
-
-  // Theme: "normal" | "halloween" | "christmas"
   const [theme, setTheme] = useState("normal");
-
-  // Spielmodus
-  // false => Einzelspieler
-  // true  => Teammodus
   const [teamMode, setTeamMode] = useState(false);
-
-  // Einzelspieler-Einstellungen
-  const [playerCount, setPlayerCount] = useState(4); // 1-8
-
-  // Team-Einstellungen
-  const [teamCount, setTeamCount] = useState(2); // 2-4
-  const [playersPerTeam, setPlayersPerTeam] = useState(2); // 1-2 (max 8 total)
-  // Farben pro Team
+  const [playerCount, setPlayerCount] = useState(4);
+  const [teamCount, setTeamCount] = useState(2);
+  const [playersPerTeam, setPlayersPerTeam] = useState(2);
   const [teamColors, setTeamColors] = useState([
-    "#3b82f6", // Team 1 blau
-    "#ef4444", // Team 2 rot
-    "#10b981", // Team 3 grün
-    "#a855f7", // Team 4 lila
+    "#3b82f6",
+    "#ef4444",
+    "#10b981",
+    "#a855f7",
   ]);
-
-  // Spieler/Slots allgemein (max 8 Slots total)
   const [playerNames, setPlayerNames] = useState(
     Array.from({ length: 8 }, (_, i) => `Player ${i + 1}`)
   );
-
-  // Punkte:
-  // - Einzelspieler: Punkte pro Spieler-Slot
-  // - Teammodus:
-  //    - wenn 2 Teams: Score Team1 = Slot0, Team2 = Slot1 (statisch)
-  //    - wenn 3-4 Teams: Score pro Team separat
   const [playerScores, setPlayerScores] = useState(Array(8).fill(0));
   const [teamScores, setTeamScores] = useState(Array(4).fill(0));
 
-  // Kameras + Bilder
   const videoRefs = Array.from({ length: 8 }, () => useRef(null));
   const [playerImages, setPlayerImages] = useState(Array(8).fill(null));
-
-  // Quizzustand
-  const [revealed, setRevealed] = useState({}); // { "CAT-idx": true }
-  const [showAnswer, setShowAnswer] = useState({}); // { "CAT-idx": true }
-
-  // Skalierung
+  const [revealed, setRevealed] = useState({});
+  const [showAnswer, setShowAnswer] = useState({});
   const [scale, setScale] = useState(1);
 
-  // Sounds
   const correctSound = useRef(null);
   const wrongSound = useRef(null);
 
+  // =========================
+  // EFFECTS
+  // =========================
   useEffect(() => {
-    // Sound-Dateien musst du ins public legen:
-    // public/sounds/correct.mp3
-    // public/sounds/wrong.mp3
+    socket.on("matchUpdate", (data) => {
+      setPlayers(data.players);
+    });
+  }, []);
+
+  useEffect(() => {
     correctSound.current = new Audio("/sounds/correct.mp3");
     wrongSound.current = new Audio("/sounds/wrong.mp3");
   }, []);
 
-  const playSound = (type) => {
-    if (type === "correct") correctSound.current?.play();
-    if (type === "wrong") wrongSound.current?.play();
-  };
-
-  // Dynamische Skalierung, damit alles auf den Screen passt
   useEffect(() => {
     const handleResize = () => {
       const w = window.innerWidth;
@@ -167,11 +108,51 @@ if (!joined) {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // =========================
-  // HELFERFUNKTIONEN
-  // =========================
+  useEffect(() => {
+    const style = document.createElement("style");
+    style.innerHTML = `
+      @keyframes spiderFloat {
+        0%,100% { transform: translateY(0); }
+        50% { transform: translateY(80px); }
+      }
+      .animate-spider {
+        animation: spiderFloat 6s ease-in-out infinite;
+      }
+      @keyframes snowFall {
+        0% { transform: translateY(-10%); opacity: 1; }
+        100% { transform: translateY(110vh); opacity: 0; }
+      }
+      .animate-snow {
+        position: absolute;
+        top: -10%;
+        animation: snowFall 8s linear infinite;
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      if (style && style.parentNode) style.parentNode.removeChild(style);
+    };
+  }, []);
 
-  // Kamera starten für einen Slot
+  // =========================
+  // FUNCTIONS
+  // =========================
+  const handleCreateQuiz = () => {
+    socket.emit("createMatch", {}, (response) => {
+      if (response.success) {
+        setMatchId(response.matchId);
+        setIsHost(true);
+        setJoined(true);
+        console.log("Quiz erstellt:", response.matchId);
+      }
+    });
+  };
+
+  const handleJoin = () => {
+    socket.emit("joinMatch", matchId, playerName || "Unbekannt");
+    setJoined(true);
+  };
+
   const startCamera = async (slotIndex) => {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
@@ -180,7 +161,6 @@ if (!joined) {
         alert("Keine Kamera gefunden.");
         return;
       }
-      // einfache Auswahl
       const answer = prompt(
         `Kamera wählen:\n${cams
           .map((c, i) => `${i + 1}: ${c.label || "Kamera " + (i + 1)}`)
@@ -201,7 +181,6 @@ if (!joined) {
     }
   };
 
-  // Bild hochladen (statt Kamera)
   const handleImageUpload = (slotIndex, e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -213,7 +192,6 @@ if (!joined) {
     });
   };
 
-  // Namen bearbeiten
   const renamePlayer = (slotIndex) => {
     const newName = prompt("Neuer Name:", playerNames[slotIndex]);
     if (!newName || !newName.trim()) return;
@@ -224,25 +202,19 @@ if (!joined) {
     });
   };
 
-  // Punkte ändern in Einzelspieler-Modus
   const changePlayerScore = (slotIndex, delta) => {
     setPlayerScores((prev) => {
       const copy = [...prev];
       copy[slotIndex] += delta;
-  
-      // 🧩 Sende Änderung an Server
       socket.emit("changeScore", {
         playerId: slotIndex,
         delta,
         newScore: copy[slotIndex],
       });
-  
       return copy;
     });
   };
-  
 
-  // Punkte ändern für Teams (3+ Teams Variante)
   const changeTeamScore = (teamIndex, delta) => {
     setTeamScores((prev) => {
       const copy = [...prev];
@@ -251,9 +223,7 @@ if (!joined) {
     });
   };
 
-  // Punkte ändern für 2-Team-Ansicht (Team 1 links, Team 2 rechts)
   const changeTwoTeamScore = (teamSideIndex, delta) => {
-    // Wir benutzen playerScores[0] für Team 1, playerScores[1] für Team 2
     setPlayerScores((prev) => {
       const copy = [...prev];
       copy[teamSideIndex] += delta;
@@ -261,20 +231,17 @@ if (!joined) {
     });
   };
 
-  // Karte aufdecken
   const handleReveal = (cat, rowIdx) => {
     const key = `${cat}-${rowIdx}`;
-    if (revealed[key]) return; // schon offen
+    if (revealed[key]) return;
     setRevealed((p) => ({ ...p, [key]: true }));
   };
 
-  // Antwort zeigen
   const handleShowAnswer = (cat, rowIdx) => {
     const key = `${cat}-${rowIdx}`;
     setShowAnswer((p) => ({ ...p, [key]: true }));
   };
 
-  // Voller Reset
   const resetGame = () => {
     setRevealed({});
     setShowAnswer({});
@@ -282,8 +249,75 @@ if (!joined) {
     setTeamScores(Array(4).fill(0));
   };
 
+  const playSound = (type) => {
+    if (type === "correct") correctSound.current?.play();
+    if (type === "wrong") wrongSound.current?.play();
+  };
+
+  function getSinglePlayerSlots() {
+    const left = [];
+    const right = [];
+    const half = Math.ceil(playerCount / 2);
+    for (let i = 0; i < playerCount; i++) {
+      if (i < half) left.push(i);
+      else right.push(i);
+    }
+    return { left, right };
+  }
+
+  function buildTeams() {
+    const teams = [];
+    const totalPlayers = teamCount * playersPerTeam;
+    for (let tIndex = 0; tIndex < teamCount; tIndex++) {
+      const members = [];
+      for (let p = 0; p < playersPerTeam; p++) {
+        const slotIndex = tIndex * playersPerTeam + p;
+        if (slotIndex < totalPlayers) {
+          members.push(slotIndex);
+        }
+      }
+      teams.push({
+        teamIndex: tIndex,
+        color: teamColors[tIndex],
+        members,
+      });
+    }
+    return teams;
+  }
+
+  function splitTeamsForSides(teamsArr) {
+    if (teamsArr.length === 2) {
+      return {
+        mode: "two-big",
+        leftTeams: [teamsArr[0]],
+        rightTeams: [teamsArr[1]],
+      };
+    } else {
+      return {
+        mode: "multi",
+        leftTeams: teamsArr.slice(0, 2),
+        rightTeams: teamsArr.slice(2, 4),
+      };
+    }
+  }
+
+  function getHeights({ isTwoBigMode, maxBlocksPerSide }) {
+    if (isTwoBigMode) {
+      return {
+        cardHeightPx: 600,
+        innerMemberHeightPx: 240,
+      };
+    } else {
+      const maxHeightAvail = 900;
+      const h = maxHeightAvail / maxBlocksPerSide;
+      const cardHeightPx = Math.min(Math.max(h, 200), 280);
+      const innerMemberHeightPx = 100;
+      return { cardHeightPx, innerMemberHeightPx };
+    }
+  }
+
   // =========================
-  // THEME STYLES
+  // THEME CONFIG
   // =========================
   const themeConfig = {
     normal: {
@@ -348,112 +382,59 @@ if (!joined) {
   };
   const t = themeConfig[theme];
 
-  // Animation CSS (Spinne / Schnee)
-  useEffect(() => {
-    const style = document.createElement("style");
-    style.innerHTML = `
-      @keyframes spiderFloat {
-        0%,100% { transform: translateY(0); }
-        50% { transform: translateY(80px); }
-      }
-      .animate-spider {
-        animation: spiderFloat 6s ease-in-out infinite;
-      }
-      @keyframes snowFall {
-        0% { transform: translateY(-10%); opacity: 1; }
-        100% { transform: translateY(110vh); opacity: 0; }
-      }
-      .animate-snow {
-        position: absolute;
-        top: -10%;
-        animation: snowFall 8s linear infinite;
-      }
-    `;
-    document.head.appendChild(style);
-    return () => {
-      if (style && style.parentNode) style.parentNode.removeChild(style);
-    };
-  }, []);
-
   // =========================
-  // HILFS-LAYOUTS
+  // RENDER: JOIN SCREEN
   // =========================
+  if (!joined) {
+  return (
+    <div className="w-screen h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800 text-white">
+      <div className="bg-black/60 border border-white/20 rounded-2xl p-8 shadow-2xl w-full max-w-md">
+        <h1 className="text-2xl font-bold text-center mb-6">Streamer Quiz</h1>
 
-  // Einzelspieler: wir verteilen playerCount Spieler auf links/rechts
-  function getSinglePlayerSlots() {
-    const left = [];
-    const right = [];
-    const half = Math.ceil(playerCount / 2);
-    for (let i = 0; i < playerCount; i++) {
-      if (i < half) left.push(i);
-      else right.push(i);
-    }
-    return { left, right };
-  }
+        {/* Neues Quiz erstellen */}
+        <div className="mb-6">
+          <button
+            onClick={handleCreateQuiz}
+            className="bg-green-600 hover:bg-green-500 text-white font-semibold w-full py-3 rounded-lg mb-2 text-lg"
+          >
+            + Neues Quiz erstellen
+          </button>
+          <p className="text-xs text-center text-white/50">Als Host ein neues Spiel starten</p>
+        </div>
 
-  // Teammodus:
-  // Wir bauen Teams wie folgt:
-  // teamCount = 2..4
-  // playersPerTeam = 1..2 (gesamt max 8)
-  // Wir geben jedes Team ein Objekt { teamIndex, color, memberSlots[], scoreGetter/setter }
-  function buildTeams() {
-    const teams = [];
-    const totalPlayers = teamCount * playersPerTeam; // max 8
-    for (let tIndex = 0; tIndex < teamCount; tIndex++) {
-      const members = [];
-      for (let p = 0; p < playersPerTeam; p++) {
-        const slotIndex = tIndex * playersPerTeam + p;
-        if (slotIndex < totalPlayers) {
-          members.push(slotIndex);
-        }
-      }
-      teams.push({
-        teamIndex: tIndex,
-        color: teamColors[tIndex],
-        members,
-      });
-    }
-    return teams;
-  }
+        {/* Trennlinie */}
+        <div className="relative mb-6">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-white/20"></div>
+          </div>
+          <div className="relative flex justify-center text-sm">
+            <span className="px-2 bg-black/60 text-white/50">oder</span>
+          </div>
+        </div>
 
-  // Für 2 Teams: links Team[0], rechts Team[1], schön groß
-  // Für 3-4 Teams: wir verteilen sie wie vorher (zwei Spalten links, zwei rechts)
-  function splitTeamsForSides(teamsArr) {
-    if (teamsArr.length === 2) {
-      return {
-        mode: "two-big",
-        leftTeams: [teamsArr[0]],
-        rightTeams: [teamsArr[1]],
-      };
-    } else {
-      return {
-        mode: "multi",
-        leftTeams: teamsArr.slice(0, 2),
-        rightTeams: teamsArr.slice(2, 4),
-      };
-    }
-  }
-
-  // Wie groß sind die Karten?
-  // - Einzelspieler: jede Karte ist gleich groß gestapelt
-  // - Team multi: jede TeamCard ähnlich wie EinzelspielerCard
-  // - Team two-big: die TeamCard ist größer
-  function getHeights({ isTwoBigMode, maxBlocksPerSide }) {
-    // Wir haben vertikal ~800px Platz nach Skalierung
-    // isTwoBigMode => pro Seite nur 1 großes Team, darf groß sein
-    if (isTwoBigMode) {
-      return {
-        cardHeightPx: 600, // große Teams links/rechts
-        innerMemberHeightPx: 240,
-      };
-    } else {
-      // sonst mehrere Blöcke untereinander
-      const maxHeightAvail = 900;
-      const h = maxHeightAvail / maxBlocksPerSide;
-      const cardHeightPx = Math.min(Math.max(h, 200), 280);
-      const innerMemberHeightPx = 100;
-      return { cardHeightPx, innerMemberHeightPx };
-    }
+        {/* Match beitreten */}
+        <h2 className="text-lg font-semibold text-center mb-4">Match beitreten</h2>
+        <input
+          value={matchId}
+          onChange={(e) => setMatchId(e.target.value)}
+          placeholder="Match ID eingeben (z.B. ABC123)"
+          className="bg-slate-800 w-full px-3 py-2 rounded-lg mb-3 text-center uppercase"
+        />
+        <input
+          value={playerName}
+          onChange={(e) => setPlayerName(e.target.value)}
+          placeholder="Dein Name"
+          className="bg-slate-800 w-full px-3 py-2 rounded-lg mb-3 text-center"
+        />
+        <button
+          onClick={handleJoin}
+          className="bg-blue-600 hover:bg-blue-500 text-white font-semibold w-full py-2 rounded-lg"
+        >
+          Beitreten
+        </button>
+      </div>
+    </div>
+  );
   }
 
   // =========================
@@ -764,6 +745,25 @@ if (!joined) {
 
           {/* QUIZ WALL IN DER MITTE */}
           <div className="flex flex-col items-center">
+            {/* Match-ID Anzeige (wenn Host) */}
+            {isHost && matchId && (
+              <div className="mb-4 bg-green-600/20 border border-green-500/50 rounded-lg px-6 py-3 text-center">
+                <p className="text-xs text-green-300 mb-1">Match-ID zum Teilen:</p>
+                <p className="text-2xl font-bold text-green-400 tracking-widest select-all">
+                  {matchId}
+                </p>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(matchId);
+                    alert("Match-ID kopiert!");
+                  }}
+                  className="mt-2 text-xs text-green-300 hover:text-green-100 underline"
+                >
+                  In Zwischenablage kopieren
+                </button>
+              </div>
+            )}
+
             <QuizWall
               t={t}
               categories={categories}

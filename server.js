@@ -14,8 +14,43 @@ const io = new Server(server, {
 // -> Datenhaltung
 const matches = {}; // { matchId: { players: [], state: {...} } }
 
+// Hilfsfunktion: Generiere eine 6-stellige Match-ID
+function generateMatchId() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // ohne O, 0, I, 1
+  let id = "";
+  for (let i = 0; i < 6; i++) {
+    id += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return id;
+}
+
 io.on("connection", (socket) => {
   console.log("🔌 New connection:", socket.id);
+
+  // Neues Match erstellen
+  socket.on("createMatch", (config, callback) => {
+    const matchId = generateMatchId();
+
+    matches[matchId] = {
+      id: matchId,
+      host: socket.id,
+      players: [],
+      config: config || {}, // Theme, Spielmodus, etc.
+      state: {
+        revealed: {},
+        showAnswer: {},
+        playerScores: Array(8).fill(0),
+        teamScores: Array(4).fill(0),
+      },
+      createdAt: new Date(),
+    };
+
+    socket.join(matchId);
+    console.log(`🎮 Match created: ${matchId} by ${socket.id}`);
+
+    // Sende Match-ID zurück an den Host
+    callback({ success: true, matchId });
+  });
 
   // Spieler tritt Match bei
   socket.on("joinMatch", (matchId, playerName) => {
