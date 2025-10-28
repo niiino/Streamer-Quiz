@@ -1,7 +1,6 @@
 import { io } from "socket.io-client";
 
 const socket = io("https://streamer-quiz-backend.onrender.com");
-socket.emit("changeScore", { playerId: socket.id, delta });
 useEffect(() => {
   socket.on("updateGame", (data) => {
     setPlayerNames(data.players.map(p => p.name));
@@ -202,9 +201,18 @@ export default function App() {
     setPlayerScores((prev) => {
       const copy = [...prev];
       copy[slotIndex] += delta;
+  
+      // 🧩 Sende Änderung an Server
+      socket.emit("changeScore", {
+        playerId: slotIndex,
+        delta,
+        newScore: copy[slotIndex],
+      });
+  
       return copy;
     });
   };
+  
 
   // Punkte ändern für Teams (3+ Teams Variante)
   const changeTeamScore = (teamIndex, delta) => {
