@@ -110,12 +110,25 @@ export default function App() {
     socket.on("connect_error", (error) => {
       console.error("❌ Socket connection error:", error);
       setSocketConnected(false);
-      setErrorMessage("Verbindung zum Server fehlgeschlagen. Bitte versuche es erneut.");
+      setErrorMessage("Verbindung zum Server fehlgeschlagen. Der Server startet möglicherweise gerade. Bitte warte 30-60 Sekunden.");
     });
 
     socket.on("matchUpdate", (data) => {
       setPlayers(data.players);
     });
+
+    // Wake up server on page load (für Render Cold Start)
+    const wakeUpServer = async () => {
+      try {
+        console.log("🏃 Waking up server...");
+        const response = await fetch("https://streamer-quiz-backend.onrender.com/health");
+        const data = await response.json();
+        console.log("✅ Server is awake:", data);
+      } catch (error) {
+        console.warn("⚠️ Failed to wake up server:", error);
+      }
+    };
+    wakeUpServer();
 
     return () => {
       socket.off("connect");
@@ -176,18 +189,18 @@ export default function App() {
     console.log("Socket connected:", socket.connected);
 
     if (!socket.connected) {
-      setErrorMessage("Keine Verbindung zum Server. Bitte warte einen Moment und versuche es erneut.");
+      setErrorMessage("Keine Verbindung zum Server. Der Server startet möglicherweise gerade (Cold Start). Bitte warte 30-60 Sekunden und versuche es erneut.");
       console.error("❌ Socket not connected");
       return;
     }
 
-    setErrorMessage("");
+    setErrorMessage("Quiz wird erstellt... (Falls der Server gerade startet, kann dies bis zu 60 Sekunden dauern)");
 
-    // Timeout für den Callback (falls Server nicht antwortet)
+    // Längerer Timeout für Render Cold Start
     const timeoutId = setTimeout(() => {
-      setErrorMessage("Server antwortet nicht. Bitte versuche es erneut.");
+      setErrorMessage("Server antwortet nicht. Der Server braucht möglicherweise länger zum Starten. Bitte versuche es in 30 Sekunden erneut.");
       console.error("❌ createMatch timeout");
-    }, 10000);
+    }, 60000); // 60 Sekunden statt 10
 
     socket.emit("createMatch", {}, (response) => {
       clearTimeout(timeoutId);
