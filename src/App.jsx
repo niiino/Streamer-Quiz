@@ -1605,10 +1605,7 @@ function BigTeamCard({
         {members.map((m, i) => (
           <div
             key={i}
-            className="flex flex-col bg-black/60 rounded-lg border border-white/10 overflow-hidden"
-            style={{
-              minHeight: "200px",
-            }}
+            className="flex flex-col bg-black/60 rounded-lg border border-white/10 overflow-visible"
           >
             {/* Video/Bild Bereich - 16:9 Aspect Ratio */}
             <div className="relative w-full bg-black" style={{ aspectRatio: "16 / 9" }}>
@@ -1729,10 +1726,7 @@ function SmallTeamCard({
         {members.map((m, i) => (
           <div
             key={i}
-            className="flex flex-col bg-black/60 rounded-lg border border-white/10 overflow-hidden"
-            style={{
-              minHeight: "150px",
-            }}
+            className="flex flex-col bg-black/60 rounded-lg border border-white/10 overflow-visible"
           >
             {/* Video/Bild Bereich - 16:9 Aspect Ratio */}
             <div className="relative w-full bg-black" style={{ aspectRatio: "16 / 9" }}>
