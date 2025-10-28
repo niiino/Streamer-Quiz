@@ -213,6 +213,30 @@ export default function App() {
         top: -10%;
         animation: snowFall 8s linear infinite;
       }
+
+      /* Custom Scrollbar Styles - Dezent und passend zum Design */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: rgba(100, 116, 139, 0.5); /* Slate-500 mit Transparenz */
+        border-radius: 4px;
+        transition: background 0.2s;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: rgba(100, 116, 139, 0.8);
+      }
+
+      /* Firefox */
+      * {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(100, 116, 139, 0.5) rgba(0, 0, 0, 0.3);
+      }
     `;
     document.head.appendChild(style);
     return () => {
@@ -1098,7 +1122,7 @@ export default function App() {
           transform: `scale(${scale})`,
           transformOrigin: "center center",
           width: "1920px",
-          height: "1000px",
+          height: "1200px", // Erhöht von 1000px auf 1200px
         }}
       >
         {/* OBERER BLOCK: linke Seite / Wall / rechte Seite */}
