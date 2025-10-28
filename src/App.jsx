@@ -166,6 +166,12 @@ export default function App() {
       cleanupPeer(socketId);
     });
 
+    socket.on("peerStartedBroadcast", ({ peerId, slotIndex }) => {
+      console.log(`📺 Peer ${peerId} started broadcasting slot ${slotIndex}`);
+      // We don't create a connection here, we wait for their offer
+      // This is just a notification that someone is ready to stream
+    });
+
     // Wake up server on page load (für Render Cold Start)
     const wakeUpServer = async () => {
       try {
@@ -188,6 +194,7 @@ export default function App() {
       socket.off("webrtc-answer");
       socket.off("webrtc-ice-candidate");
       socket.off("peer-disconnected");
+      socket.off("peerStartedBroadcast");
     };
   }, [isHost]);
 
@@ -280,11 +287,17 @@ export default function App() {
 
     peer.on("stream", (remoteStream) => {
       console.log(`📺 Received stream from ${targetSocketId} for slot ${slotIndex}`);
+      console.log(`📺 Stream tracks:`, remoteStream.getTracks());
+      console.log(`📺 Video ref exists:`, !!videoRefs[slotIndex]?.current);
+
       if (videoRefs[slotIndex]?.current) {
         videoRefs[slotIndex].current.srcObject = remoteStream;
         videoRefs[slotIndex].current.play().catch(err => {
-          console.warn("Play failed:", err);
+          console.warn("❌ Play failed:", err);
         });
+        console.log(`✅ Stream attached to video element for slot ${slotIndex}`);
+      } else {
+        console.error(`❌ No video ref for slot ${slotIndex}`);
       }
     });
 
@@ -306,10 +319,15 @@ export default function App() {
   };
 
   const handleWebRTCOffer = (fromSocketId, offer, slotIndex) => {
+    console.log(`🎯 Handling offer from ${fromSocketId} for slot ${slotIndex}`);
     // Someone wants to send us their video for this slot
     // We create a peer as receiver (initiator: false)
-    const peer = createPeerConnection(fromSocketId, slotIndex, false, null);
-    peer.signal(offer);
+    try {
+      const peer = createPeerConnection(fromSocketId, slotIndex, false, null);
+      peer.signal(offer);
+    } catch (error) {
+      console.error(`❌ Error handling offer:`, error);
+    }
   };
 
   const handleWebRTCAnswer = (fromSocketId, answer, slotIndex) => {
@@ -341,26 +359,31 @@ export default function App() {
 
   const broadcastCameraToSlot = async (slotIndex, stream) => {
     console.log(`📡 Broadcasting camera to slot ${slotIndex}`);
+    console.log(`📊 Current players:`, players);
+    console.log(`📊 My socket ID:`, socket.id);
 
     // Save the stream locally
     localStreamsRef.current[slotIndex] = stream;
     setBroadcastingSlots((prev) => [...prev, slotIndex]);
 
-    // Create peer connections to all other players
-    players.forEach((player) => {
-      if (player.id !== socket.id) {
-        createPeerConnection(player.id, slotIndex, true, stream);
+    // Get all sockets in the match from the server
+    socket.emit("requestPeers", { matchId }, (response) => {
+      console.log(`📥 Received peers:`, response);
+
+      if (response && response.peers) {
+        response.peers.forEach((peerId) => {
+          if (peerId !== socket.id) {
+            console.log(`🔗 Creating peer connection to ${peerId}`);
+            createPeerConnection(peerId, slotIndex, true, stream);
+          }
+        });
       }
     });
 
     // Notify others that we're broadcasting this slot
-    socket.emit("updateGameState", {
+    socket.emit("startBroadcast", {
       matchId,
-      state: {
-        cameraSlots: {
-          [slotIndex]: socket.id, // This slot is broadcasted by this socket
-        },
-      },
+      slotIndex,
     });
   };
 
