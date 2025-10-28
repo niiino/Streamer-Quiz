@@ -1,6 +1,13 @@
 import React, { useState, useRef, useEffect } from "react";
 import { io } from "socket.io-client";
-const socket = io("https://streamer-quiz-backend.onrender.com");
+
+const socket = io("https://streamer-quiz-backend.onrender.com", {
+  transports: ["websocket", "polling"],
+  reconnection: true,
+  reconnectionAttempts: 5,
+  reconnectionDelay: 1000,
+});
+
 export default function App() {
   // =========================
   // MULTIPLAYER STATE (muss ganz oben sein!)
@@ -10,6 +17,8 @@ export default function App() {
   const [playerName, setPlayerName] = useState("");
   const [players, setPlayers] = useState([]);
   const [isHost, setIsHost] = useState(false);
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   // =========================
   // GAME STATE (alle Hooks MÜSSEN vor dem return sein!)
@@ -86,9 +95,34 @@ export default function App() {
   // EFFECTS
   // =========================
   useEffect(() => {
+    // Socket Connection Status
+    socket.on("connect", () => {
+      console.log("✅ Socket connected:", socket.id);
+      setSocketConnected(true);
+      setErrorMessage("");
+    });
+
+    socket.on("disconnect", () => {
+      console.log("❌ Socket disconnected");
+      setSocketConnected(false);
+    });
+
+    socket.on("connect_error", (error) => {
+      console.error("❌ Socket connection error:", error);
+      setSocketConnected(false);
+      setErrorMessage("Verbindung zum Server fehlgeschlagen. Bitte versuche es erneut.");
+    });
+
     socket.on("matchUpdate", (data) => {
       setPlayers(data.players);
     });
+
+    return () => {
+      socket.off("connect");
+      socket.off("disconnect");
+      socket.off("connect_error");
+      socket.off("matchUpdate");
+    };
   }, []);
 
   useEffect(() => {
@@ -138,12 +172,36 @@ export default function App() {
   // FUNCTIONS
   // =========================
   const handleCreateQuiz = () => {
+    console.log("🎮 Creating quiz...");
+    console.log("Socket connected:", socket.connected);
+
+    if (!socket.connected) {
+      setErrorMessage("Keine Verbindung zum Server. Bitte warte einen Moment und versuche es erneut.");
+      console.error("❌ Socket not connected");
+      return;
+    }
+
+    setErrorMessage("");
+
+    // Timeout für den Callback (falls Server nicht antwortet)
+    const timeoutId = setTimeout(() => {
+      setErrorMessage("Server antwortet nicht. Bitte versuche es erneut.");
+      console.error("❌ createMatch timeout");
+    }, 10000);
+
     socket.emit("createMatch", {}, (response) => {
-      if (response.success) {
+      clearTimeout(timeoutId);
+      console.log("📥 Server response:", response);
+
+      if (response && response.success) {
         setMatchId(response.matchId);
         setIsHost(true);
         setJoined(true);
-        console.log("Quiz erstellt:", response.matchId);
+        setErrorMessage("");
+        console.log("✅ Quiz erstellt:", response.matchId);
+      } else {
+        setErrorMessage("Fehler beim Erstellen des Quiz. Bitte versuche es erneut.");
+        console.error("❌ Failed to create quiz:", response);
       }
     });
   };
@@ -391,11 +449,32 @@ export default function App() {
       <div className="bg-black/60 border border-white/20 rounded-2xl p-8 shadow-2xl w-full max-w-md">
         <h1 className="text-2xl font-bold text-center mb-6">Streamer Quiz</h1>
 
+        {/* Connection Status */}
+        <div className="mb-4 text-center">
+          {socketConnected ? (
+            <div className="text-green-400 text-sm">🟢 Verbunden</div>
+          ) : (
+            <div className="text-yellow-400 text-sm">🟡 Verbinde zum Server...</div>
+          )}
+        </div>
+
+        {/* Error Message */}
+        {errorMessage && (
+          <div className="mb-4 bg-red-600/20 border border-red-500/50 rounded-lg p-3 text-center">
+            <p className="text-red-300 text-sm">{errorMessage}</p>
+          </div>
+        )}
+
         {/* Neues Quiz erstellen */}
         <div className="mb-6">
           <button
             onClick={handleCreateQuiz}
-            className="bg-green-600 hover:bg-green-500 text-white font-semibold w-full py-3 rounded-lg mb-2 text-lg"
+            disabled={!socketConnected}
+            className={`${
+              socketConnected
+                ? "bg-green-600 hover:bg-green-500"
+                : "bg-gray-600 cursor-not-allowed"
+            } text-white font-semibold w-full py-3 rounded-lg mb-2 text-lg transition-colors`}
           >
             + Neues Quiz erstellen
           </button>
