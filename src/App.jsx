@@ -501,38 +501,68 @@ export default function App() {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       const cams = devices.filter((d) => d.kind === "videoinput");
+
       if (cams.length === 0) {
         alert("Keine Kamera gefunden.");
         return;
       }
-      const answer = prompt(
-        `Kamera wählen:\n${cams
-          .map((c, i) => `${i + 1}: ${c.label || "Kamera " + (i + 1)}`)
-          .join("\n")}\n\nNummer eingeben:`
-      );
-      const chosen = parseInt(answer, 10) - 1;
-      if (chosen < 0 || chosen >= cams.length) return;
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: cams[chosen].deviceId },
-        audio: false, // Kein Audio für Quiz
-      });
+      let stream;
+
+      // If only one camera, use it directly
+      if (cams.length === 1) {
+        console.log(`📹 Using only available camera: ${cams[0].label}`);
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: cams[0].deviceId },
+          audio: false,
+        });
+      } else {
+        // Multiple cameras - let user choose
+        const answer = prompt(
+          `Kamera wählen:\n${cams
+            .map((c, i) => `${i + 1}: ${c.label || "Kamera " + (i + 1)}`)
+            .join("\n")}\n\nNummer eingeben:`
+        );
+
+        // User cancelled
+        if (!answer) {
+          console.log("❌ User cancelled camera selection");
+          return;
+        }
+
+        const chosen = parseInt(answer, 10) - 1;
+
+        // Invalid number
+        if (isNaN(chosen) || chosen < 0 || chosen >= cams.length) {
+          alert(`Ungültige Auswahl. Bitte Zahl zwischen 1 und ${cams.length} eingeben.`);
+          return;
+        }
+
+        console.log(`📹 Using camera: ${cams[chosen].label || `Camera ${chosen + 1}`}`);
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: cams[chosen].deviceId },
+          audio: false,
+        });
+      }
 
       // Show in local video element
       if (videoRefs[slotIndex].current) {
         videoRefs[slotIndex].current.srcObject = stream;
         videoRefs[slotIndex].current.muted = true; // Mute local playback
+        videoRefs[slotIndex].current.play().catch(err => {
+          console.warn("❌ Local video play failed:", err);
+        });
       }
 
       // Broadcast to all other players via WebRTC
-      if (matchId && players.length > 0) {
+      if (matchId) {
         await broadcastCameraToSlot(slotIndex, stream);
         console.log(`✅ Camera started and broadcasting for slot ${slotIndex}`);
       } else {
-        // Just local preview if no match
-        console.log(`✅ Camera started locally for slot ${slotIndex}`);
+        console.log(`✅ Camera started locally for slot ${slotIndex} (no match yet)`);
       }
     } catch (err) {
+      console.error("❌ Camera error:", err);
       alert("Kamera konnte nicht gestartet werden: " + err.message);
     }
   };
