@@ -2,7 +2,14 @@ import React, { useState, useRef, useEffect } from "react";
 import { io } from "socket.io-client";
 import Peer from "peerjs";
 
-const socket = io("https://streamer-quiz-backend.onrender.com", {
+// Toggle between local and production
+const BACKEND_URL = import.meta.env.DEV
+  ? "http://localhost:3001"
+  : "https://streamer-quiz-backend.onrender.com";
+
+console.log("🔗 Connecting to backend:", BACKEND_URL);
+
+const socket = io(BACKEND_URL, {
   transports: ["websocket", "polling"],
   reconnection: true,
   reconnectionAttempts: 5,
@@ -153,7 +160,7 @@ export default function App() {
     const wakeUpServer = async () => {
       try {
         console.log("🏃 Waking up server...");
-        const response = await fetch("https://streamer-quiz-backend.onrender.com/health");
+        const response = await fetch(`${BACKEND_URL}/health`);
         const data = await response.json();
         console.log("✅ Server is awake:", data);
       } catch (error) {
@@ -399,6 +406,10 @@ export default function App() {
     console.log("👥 Joining match:", cleanMatchId);
 
     socket.emit("joinMatch", cleanMatchId, playerName || "Unbekannt", (response) => {
+      console.log("📥 joinMatch callback received:", response);
+      console.log("📥 Response type:", typeof response);
+      console.log("📥 Response.success:", response?.success);
+
       if (response && response.success) {
         console.log("✅ Successfully joined match:", response.match);
 
@@ -433,7 +444,8 @@ export default function App() {
         setErrorMessage("");
       } else {
         console.error("❌ Failed to join match:", response);
-        setErrorMessage(response?.error || "Match nicht gefunden. Bitte überprüfe die Match-ID.");
+        console.error("❌ Response details:", JSON.stringify(response, null, 2));
+        setErrorMessage(response?.error || response?.message || "Match nicht gefunden. Bitte überprüfe die Match-ID.");
       }
     });
   };
