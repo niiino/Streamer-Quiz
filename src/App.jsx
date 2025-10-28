@@ -1122,7 +1122,7 @@ export default function App() {
           transform: `scale(${scale})`,
           transformOrigin: "center center",
           width: "1920px",
-          height: "1200px", // Erhöht von 1000px auf 1200px
+          height: "1000px", // Erhöht von 1000px auf 1200px
         }}
       >
         {/* OBERER BLOCK: linke Seite / Wall / rechte Seite */}
