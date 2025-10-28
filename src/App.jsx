@@ -745,7 +745,7 @@ export default function App() {
   function getHeights({ isTwoBigMode, maxBlocksPerSide }) {
     if (isTwoBigMode) {
       return {
-        cardHeightPx: 600,
+        cardHeightPx: 700,
         innerMemberHeightPx: 240,
       };
     } else {
