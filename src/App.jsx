@@ -1601,22 +1601,22 @@ function BigTeamCard({
       </div>
 
       {/* Mitglieder */}
-      <div className="flex-1 grid grid-cols-1 gap-2 p-3 overflow-hidden">
+      <div className="flex-1 flex flex-col gap-2 p-3 overflow-y-auto">
         {members.map((m, i) => (
           <div
             key={i}
-            className="flex bg-black/60 rounded-lg border border-white/10 overflow-hidden"
+            className="flex flex-col bg-black/60 rounded-lg border border-white/10 overflow-hidden"
             style={{
-              minHeight: 0,
-              height: `${innerMemberHeightPx}px`,
+              minHeight: "200px",
             }}
           >
-            <div className="flex-1 bg-black">
+            {/* Video/Bild Bereich */}
+            <div className="relative h-[180px] bg-black">
               {m.image ? (
                 <img
                   src={m.image}
                   alt={m.name}
-                  className="w-full h-full object-cover bg-black"
+                  className="w-full h-full object-cover"
                 />
               ) : (
                 <video
@@ -1624,36 +1624,41 @@ function BigTeamCard({
                   autoPlay
                   muted
                   playsInline
-                  className="w-full h-full object-cover bg-black"
+                  className="w-full h-full object-cover"
                 ></video>
               )}
             </div>
 
-            <div className="flex flex-col justify-between p-2 text-[0.7rem] w-[130px] text-white">
-              <div className="truncate font-semibold leading-none max-w-[120px]">
-                {m.name}
+            {/* Info & Buttons Bereich */}
+            <div className="flex items-center justify-between p-2 bg-slate-800/80 text-white">
+              <div className="flex flex-col gap-1 flex-1">
+                <div className="truncate font-semibold text-[0.8rem] max-w-[150px]">
+                  {m.name}
+                </div>
+                <div className="flex gap-2 text-[0.65rem]">
+                  <button
+                    onClick={m.renamePlayer}
+                    className="text-cyan-400 hover:text-cyan-200"
+                  >
+                    ✏️ Name
+                  </button>
+                  <button
+                    onClick={m.startCamera}
+                    className="text-cyan-400 hover:text-cyan-200"
+                  >
+                    🎥 Cam
+                  </button>
+                  <label className="text-cyan-400 hover:text-cyan-200 cursor-pointer">
+                    🖼️ Bild
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={m.uploadImage}
+                    />
+                  </label>
+                </div>
               </div>
-              <button
-                onClick={m.renamePlayer}
-                className="text-cyan-400 hover:text-cyan-200 text-left leading-none text-[0.65rem]"
-              >
-                ✏️ Name
-              </button>
-              <button
-                onClick={m.startCamera}
-                className="text-cyan-400 hover:text-cyan-200 text-left leading-none text-[0.65rem]"
-              >
-                🎥 Kamera
-              </button>
-              <label className="text-cyan-400 hover:text-cyan-200 text-left leading-none text-[0.65rem] cursor-pointer">
-                Bild
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={m.uploadImage}
-                />
-              </label>
             </div>
           </div>
         ))}
@@ -1720,22 +1725,22 @@ function SmallTeamCard({
       </div>
 
       {/* Mitglieder */}
-      <div className="flex-1 grid grid-cols-1 gap-2 p-2 overflow-hidden">
+      <div className="flex-1 flex flex-col gap-2 p-2 overflow-y-auto">
         {members.map((m, i) => (
           <div
             key={i}
-            className="flex bg-black/60 rounded-lg border border-white/10 overflow-hidden"
+            className="flex flex-col bg-black/60 rounded-lg border border-white/10 overflow-hidden"
             style={{
-              minHeight: 0,
-              height: `${innerMemberHeightPx}px`,
+              minHeight: "150px",
             }}
           >
-            <div className="flex-1 bg-black">
+            {/* Video/Bild Bereich */}
+            <div className="relative h-[120px] bg-black">
               {m.image ? (
                 <img
                   src={m.image}
                   alt={m.name}
-                  className="w-full h-full object-cover bg-black"
+                  className="w-full h-full object-cover"
                 />
               ) : (
                 <video
@@ -1743,36 +1748,41 @@ function SmallTeamCard({
                   autoPlay
                   muted
                   playsInline
-                  className="w-full h-full object-cover bg-black"
+                  className="w-full h-full object-cover"
                 ></video>
               )}
             </div>
 
-            <div className="flex flex-col justify-between p-2 text-[0.6rem] w-[120px] text-white">
-              <div className="truncate font-semibold leading-none max-w-[110px]">
-                {m.name}
+            {/* Info & Buttons Bereich */}
+            <div className="flex items-center justify-between p-1.5 bg-slate-800/80 text-white">
+              <div className="flex flex-col gap-0.5 flex-1">
+                <div className="truncate font-semibold text-[0.7rem] max-w-[120px]">
+                  {m.name}
+                </div>
+                <div className="flex gap-1.5 text-[0.6rem]">
+                  <button
+                    onClick={m.renamePlayer}
+                    className="text-cyan-400 hover:text-cyan-200"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    onClick={m.startCamera}
+                    className="text-cyan-400 hover:text-cyan-200"
+                  >
+                    🎥
+                  </button>
+                  <label className="text-cyan-400 hover:text-cyan-200 cursor-pointer">
+                    🖼️
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={m.uploadImage}
+                    />
+                  </label>
+                </div>
               </div>
-              <button
-                onClick={m.renamePlayer}
-                className="text-cyan-400 hover:text-cyan-200 text-left leading-none"
-              >
-                ✏️ Name
-              </button>
-              <button
-                onClick={m.startCamera}
-                className="text-cyan-400 hover:text-cyan-200 text-left leading-none"
-              >
-                🎥 Kamera
-              </button>
-              <label className="text-cyan-400 hover:text-cyan-200 text-left leading-none cursor-pointer">
-                Bild
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={m.uploadImage}
-                />
-              </label>
             </div>
           </div>
         ))}
