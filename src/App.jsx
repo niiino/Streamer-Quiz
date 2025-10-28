@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { io } from "socket.io-client";
+import Peer from "simple-peer";
 
 const socket = io("https://streamer-quiz-backend.onrender.com", {
   transports: ["websocket", "polling"],
@@ -91,6 +92,11 @@ export default function App() {
   const correctSound = useRef(null);
   const wrongSound = useRef(null);
 
+  // WebRTC States
+  const peersRef = useRef({}); // { slotIndex: { [socketId]: Peer } }
+  const localStreamsRef = useRef({}); // { slotIndex: MediaStream }
+  const [broadcastingSlots, setBroadcastingSlots] = useState([]); // Welche Slots broadcaste ich?
+
   // =========================
   // EFFECTS
   // =========================
@@ -135,7 +141,29 @@ export default function App() {
         if (data.state.playerScores !== undefined) setPlayerScores(data.state.playerScores);
         if (data.state.teamScores !== undefined) setTeamScores(data.state.teamScores);
         if (data.state.playerNames !== undefined) setPlayerNames(data.state.playerNames);
+        if (data.state.playerImages !== undefined) setPlayerImages(data.state.playerImages);
       }
+    });
+
+    // WebRTC Signaling Events
+    socket.on("webrtc-offer", ({ fromSocketId, offer, slotIndex }) => {
+      console.log(`📥 Received WebRTC offer from ${fromSocketId} for slot ${slotIndex}`);
+      handleWebRTCOffer(fromSocketId, offer, slotIndex);
+    });
+
+    socket.on("webrtc-answer", ({ fromSocketId, answer, slotIndex }) => {
+      console.log(`📥 Received WebRTC answer from ${fromSocketId} for slot ${slotIndex}`);
+      handleWebRTCAnswer(fromSocketId, answer, slotIndex);
+    });
+
+    socket.on("webrtc-ice-candidate", ({ fromSocketId, candidate, slotIndex }) => {
+      console.log(`📥 Received ICE candidate from ${fromSocketId}`);
+      handleICECandidate(fromSocketId, candidate, slotIndex);
+    });
+
+    socket.on("peer-disconnected", ({ socketId }) => {
+      console.log(`❌ Peer disconnected: ${socketId}`);
+      cleanupPeer(socketId);
     });
 
     // Wake up server on page load (für Render Cold Start)
@@ -156,6 +184,10 @@ export default function App() {
       socket.off("disconnect");
       socket.off("connect_error");
       socket.off("matchUpdate");
+      socket.off("webrtc-offer");
+      socket.off("webrtc-answer");
+      socket.off("webrtc-ice-candidate");
+      socket.off("peer-disconnected");
     };
   }, [isHost]);
 
@@ -201,6 +233,159 @@ export default function App() {
       if (style && style.parentNode) style.parentNode.removeChild(style);
     };
   }, []);
+
+  // =========================
+  // WEBRTC FUNCTIONS
+  // =========================
+  const createPeerConnection = (targetSocketId, slotIndex, initiator, stream) => {
+    console.log(`🔗 Creating peer connection to ${targetSocketId} for slot ${slotIndex}, initiator: ${initiator}`);
+
+    const peer = new Peer({
+      initiator,
+      stream,
+      trickle: true,
+      config: {
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: "stun:stun1.l.google.com:19302" },
+        ],
+      },
+    });
+
+    peer.on("signal", (signal) => {
+      console.log(`📤 Sending signal to ${targetSocketId}`);
+      if (signal.type === "offer") {
+        socket.emit("webrtc-offer", {
+          matchId,
+          targetSocketId,
+          offer: signal,
+          slotIndex,
+        });
+      } else if (signal.type === "answer") {
+        socket.emit("webrtc-answer", {
+          matchId,
+          targetSocketId,
+          answer: signal,
+          slotIndex,
+        });
+      } else {
+        socket.emit("webrtc-ice-candidate", {
+          matchId,
+          targetSocketId,
+          candidate: signal,
+          slotIndex,
+        });
+      }
+    });
+
+    peer.on("stream", (remoteStream) => {
+      console.log(`📺 Received stream from ${targetSocketId} for slot ${slotIndex}`);
+      if (videoRefs[slotIndex]?.current) {
+        videoRefs[slotIndex].current.srcObject = remoteStream;
+        videoRefs[slotIndex].current.play().catch(err => {
+          console.warn("Play failed:", err);
+        });
+      }
+    });
+
+    peer.on("error", (err) => {
+      console.error(`❌ Peer error with ${targetSocketId}:`, err);
+    });
+
+    peer.on("close", () => {
+      console.log(`🔌 Peer connection closed with ${targetSocketId}`);
+    });
+
+    // Store peer reference
+    if (!peersRef.current[slotIndex]) {
+      peersRef.current[slotIndex] = {};
+    }
+    peersRef.current[slotIndex][targetSocketId] = peer;
+
+    return peer;
+  };
+
+  const handleWebRTCOffer = (fromSocketId, offer, slotIndex) => {
+    // Someone wants to send us their video for this slot
+    // We create a peer as receiver (initiator: false)
+    const peer = createPeerConnection(fromSocketId, slotIndex, false, null);
+    peer.signal(offer);
+  };
+
+  const handleWebRTCAnswer = (fromSocketId, answer, slotIndex) => {
+    const peer = peersRef.current[slotIndex]?.[fromSocketId];
+    if (peer) {
+      peer.signal(answer);
+    } else {
+      console.warn(`No peer found for ${fromSocketId} slot ${slotIndex}`);
+    }
+  };
+
+  const handleICECandidate = (fromSocketId, candidate, slotIndex) => {
+    const peer = peersRef.current[slotIndex]?.[fromSocketId];
+    if (peer) {
+      peer.signal(candidate);
+    }
+  };
+
+  const cleanupPeer = (socketId) => {
+    // Remove all peers associated with this socket
+    Object.keys(peersRef.current).forEach((slotIndex) => {
+      const peer = peersRef.current[slotIndex]?.[socketId];
+      if (peer) {
+        peer.destroy();
+        delete peersRef.current[slotIndex][socketId];
+      }
+    });
+  };
+
+  const broadcastCameraToSlot = async (slotIndex, stream) => {
+    console.log(`📡 Broadcasting camera to slot ${slotIndex}`);
+
+    // Save the stream locally
+    localStreamsRef.current[slotIndex] = stream;
+    setBroadcastingSlots((prev) => [...prev, slotIndex]);
+
+    // Create peer connections to all other players
+    players.forEach((player) => {
+      if (player.id !== socket.id) {
+        createPeerConnection(player.id, slotIndex, true, stream);
+      }
+    });
+
+    // Notify others that we're broadcasting this slot
+    socket.emit("updateGameState", {
+      matchId,
+      state: {
+        cameraSlots: {
+          [slotIndex]: socket.id, // This slot is broadcasted by this socket
+        },
+      },
+    });
+  };
+
+  const stopBroadcastingSlot = (slotIndex) => {
+    console.log(`🛑 Stopping broadcast for slot ${slotIndex}`);
+
+    const stream = localStreamsRef.current[slotIndex];
+    if (stream) {
+      stream.getTracks().forEach((track) => track.stop());
+      delete localStreamsRef.current[slotIndex];
+    }
+
+    // Destroy all peer connections for this slot
+    if (peersRef.current[slotIndex]) {
+      Object.values(peersRef.current[slotIndex]).forEach((peer) => peer.destroy());
+      delete peersRef.current[slotIndex];
+    }
+
+    setBroadcastingSlots((prev) => prev.filter((s) => s !== slotIndex));
+
+    // Clear video element
+    if (videoRefs[slotIndex]?.current) {
+      videoRefs[slotIndex].current.srcObject = null;
+    }
+  };
 
   // =========================
   // FUNCTIONS
@@ -269,6 +454,7 @@ export default function App() {
           if (match.state.playerScores) setPlayerScores(match.state.playerScores);
           if (match.state.teamScores) setTeamScores(match.state.teamScores);
           if (match.state.playerNames) setPlayerNames(match.state.playerNames);
+          if (match.state.playerImages) setPlayerImages(match.state.playerImages);
         }
 
         if (match.players) {
@@ -306,10 +492,22 @@ export default function App() {
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { deviceId: cams[chosen].deviceId },
+        audio: false, // Kein Audio für Quiz
       });
 
+      // Show in local video element
       if (videoRefs[slotIndex].current) {
         videoRefs[slotIndex].current.srcObject = stream;
+        videoRefs[slotIndex].current.muted = true; // Mute local playback
+      }
+
+      // Broadcast to all other players via WebRTC
+      if (matchId && players.length > 0) {
+        await broadcastCameraToSlot(slotIndex, stream);
+        console.log(`✅ Camera started and broadcasting for slot ${slotIndex}`);
+      } else {
+        // Just local preview if no match
+        console.log(`✅ Camera started locally for slot ${slotIndex}`);
       }
     } catch (err) {
       alert("Kamera konnte nicht gestartet werden: " + err.message);
@@ -319,12 +517,31 @@ export default function App() {
   const handleImageUpload = (slotIndex, e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    setPlayerImages((prev) => {
-      const copy = [...prev];
-      copy[slotIndex] = url;
-      return copy;
-    });
+
+    // Check file size (max 500KB for performance)
+    if (file.size > 500000) {
+      alert("Bild ist zu groß! Bitte wähle ein Bild unter 500KB.");
+      return;
+    }
+
+    // Convert to Base64 for syncing
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64Image = event.target.result;
+      const newPlayerImages = [...playerImages];
+      newPlayerImages[slotIndex] = base64Image;
+      setPlayerImages(newPlayerImages);
+
+      // Sync to all players
+      if (matchId) {
+        console.log(`📤 Syncing image for player ${slotIndex}`);
+        socket.emit("updateGameState", {
+          matchId,
+          state: { playerImages: newPlayerImages },
+        });
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const renamePlayer = (slotIndex) => {
