@@ -1610,8 +1610,8 @@ function BigTeamCard({
               minHeight: "200px",
             }}
           >
-            {/* Video/Bild Bereich */}
-            <div className="relative h-[180px] bg-black">
+            {/* Video/Bild Bereich - 16:9 Aspect Ratio */}
+            <div className="relative w-full bg-black" style={{ aspectRatio: "16 / 9" }}>
               {m.image ? (
                 <img
                   src={m.image}
@@ -1734,8 +1734,8 @@ function SmallTeamCard({
               minHeight: "150px",
             }}
           >
-            {/* Video/Bild Bereich */}
-            <div className="relative h-[120px] bg-black">
+            {/* Video/Bild Bereich - 16:9 Aspect Ratio */}
+            <div className="relative w-full bg-black" style={{ aspectRatio: "16 / 9" }}>
               {m.image ? (
                 <img
                   src={m.image}
