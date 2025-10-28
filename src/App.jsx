@@ -1,20 +1,18 @@
-import { io } from "socket.io-client";
-
-const socket = io("https://streamer-quiz-backend.onrender.com");
-useEffect(() => {
-  socket.on("updateGame", (data) => {
-    setPlayerNames(data.players.map(p => p.name));
-    setPlayerScores(data.players.map(p => p.score));
-    setRevealed(data.revealed);
-    setShowAnswer(data.showAnswer);
-  });
-}, []);
 import React, { useState, useRef, useEffect } from "react";
-
+import { io } from "socket.io-client";
+const socket = io("https://streamer-quiz-backend.onrender.com");
 export default function App() {
   // =========================
   // QUIZ DATEN
   // =========================
+  useEffect(() => {
+    socket.on("updateGame", (data) => {
+      setPlayerNames(data.players.map(p => p.name));
+      setPlayerScores(data.players.map(p => p.score));
+      setRevealed(data.revealed);
+      setShowAnswer(data.showAnswer);
+    });
+  }, []);
   const categories = ["HISTORY", "SCIENCE", "MOVIES", "GAMING", "RANDOM"];
   const pointsOrder = [100, 200, 300, 400, 500]; // 100 oben, 500 unten
 
