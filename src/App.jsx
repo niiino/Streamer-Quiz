@@ -114,7 +114,26 @@ export default function App() {
     });
 
     socket.on("matchUpdate", (data) => {
+      console.log("📥 Match update received:", data);
       setPlayers(data.players);
+
+      // Sync game config from host (for guests)
+      if (data.config && !isHost) {
+        console.log("🔄 Syncing config from host:", data.config);
+        if (data.config.theme) setTheme(data.config.theme);
+        if (data.config.teamMode !== undefined) setTeamMode(data.config.teamMode);
+        if (data.config.playerCount) setPlayerCount(data.config.playerCount);
+        if (data.config.teamCount) setTeamCount(data.config.teamCount);
+        if (data.config.playersPerTeam) setPlayersPerTeam(data.config.playersPerTeam);
+      }
+
+      // Sync game state
+      if (data.state) {
+        if (data.state.revealed) setRevealed(data.state.revealed);
+        if (data.state.showAnswer) setShowAnswer(data.state.showAnswer);
+        if (data.state.playerScores) setPlayerScores(data.state.playerScores);
+        if (data.state.teamScores) setTeamScores(data.state.teamScores);
+      }
     });
 
     // Wake up server on page load (für Render Cold Start)
@@ -136,7 +155,7 @@ export default function App() {
       socket.off("connect_error");
       socket.off("matchUpdate");
     };
-  }, []);
+  }, [isHost]);
 
   useEffect(() => {
     correctSound.current = new Audio("/sounds/correct.mp3");
@@ -220,8 +239,18 @@ export default function App() {
   };
 
   const handleJoin = () => {
-    socket.emit("joinMatch", matchId, playerName || "Unbekannt");
+    if (!matchId.trim()) {
+      setErrorMessage("Bitte gib eine Match-ID ein.");
+      return;
+    }
+
+    console.log("👥 Joining match:", matchId);
+    socket.emit("joinMatch", matchId.toUpperCase(), playerName || "Unbekannt");
+
+    // Gäste überspringen das Setup
     setJoined(true);
+    setSetupDone(true); // Gäste gehen direkt ins Spiel
+    setIsHost(false);
   };
 
   const startCamera = async (slotIndex) => {
@@ -305,12 +334,36 @@ export default function App() {
   const handleReveal = (cat, rowIdx) => {
     const key = `${cat}-${rowIdx}`;
     if (revealed[key]) return;
-    setRevealed((p) => ({ ...p, [key]: true }));
+    setRevealed((p) => {
+      const newRevealed = { ...p, [key]: true };
+
+      // Sync to all players
+      if (matchId) {
+        socket.emit("updateGameState", {
+          matchId,
+          state: { revealed: newRevealed },
+        });
+      }
+
+      return newRevealed;
+    });
   };
 
   const handleShowAnswer = (cat, rowIdx) => {
     const key = `${cat}-${rowIdx}`;
-    setShowAnswer((p) => ({ ...p, [key]: true }));
+    setShowAnswer((p) => {
+      const newShowAnswer = { ...p, [key]: true };
+
+      // Sync to all players
+      if (matchId) {
+        socket.emit("updateGameState", {
+          matchId,
+          state: { showAnswer: newShowAnswer },
+        });
+      }
+
+      return newShowAnswer;
+    });
   };
 
   const resetGame = () => {
@@ -678,7 +731,24 @@ export default function App() {
 
           <div className="text-center">
             <button
-              onClick={() => setSetupDone(true)}
+              onClick={() => {
+                setSetupDone(true);
+
+                // Host sendet Konfiguration an alle Spieler
+                if (isHost && matchId) {
+                  console.log("📤 Sending config to all players");
+                  socket.emit("updateConfig", {
+                    matchId,
+                    config: {
+                      theme,
+                      teamMode,
+                      playerCount,
+                      teamCount,
+                      playersPerTeam,
+                    },
+                  });
+                }
+              }}
               className={`${t.buttonClass} text-white font-semibold px-6 py-3 rounded-xl shadow-lg transition`}
             >
               ▶️ Spiel starten
